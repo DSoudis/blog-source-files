@@ -62,7 +62,6 @@ Final.Table &lt;- NFlights %&gt;% left_join(TotalDelay) %&gt;%
 ## GROUP BY `carrier`)
 ## 
 ## USING (`carrier`))</code></pre>
-<p>This could have done a bit more efficiently by selecting only the columns i am interested in</p>
 </div>
 <div id="combining-tables-and-plotinganalysing." class="section level2">
 <h2>Combining tables and ploting/analysing.</h2>
@@ -97,7 +96,7 @@ AverageDelay %&gt;% left_join(weather_sqlite) %&gt;%
 <p>So there seems to be little relationship between delay times and local weather. This does make some sense, but it’s not the point of the post. The point of the post is how easy <code>dplyr</code> makes the use of SQL databases for basic querying and analysis.</p>
 <p>It kind of makes it feel like this:</p>
 <div class="figure">
-<img src="/img/aG9Z0b5_700b.jpg" alt="Just another Day Plotting" />
-<p class="caption">Just another Day Plotting</p>
+<img src="/img/aG9Z0b5_700b.jpg" alt="Just Another Day Plotting" />
+<p class="caption">Just Another Day Plotting</p>
 </div>
 </div>
