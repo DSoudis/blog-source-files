@@ -1,0 +1,12 @@
+base
+xml2
+rvest
+dplyr
+qdapDictionaries
+qdapRegex
+qdapTools
+RColorBrewer
+qdap
+NLP
+tm
+ggplot2

@@ -1,0 +1,116 @@
+---
+title: 'California Uber Alles: Shift Share Analysis in R'
+author: ''
+date: '2016-10-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Introduction
+
+Recently, i had to perform shift share analysis (henceforth SSA) for a project at my department. Spoiled as i am with all the *R* packages available, i was quite surprised not to find one to perform SSA at that time ^[Update: A new package arrived in CRAN called *REAT: Regional Economic Analysis Toolbox*. The package contains a function to calculate simple shift share analysis]. So i rolled up my sleeves and wrote a few functions to calculate the SSA components. At that point, i thought this would make a nice opportunity to experiment with developing *R* packages and turned the project into a quick-and-dirty package now available on my [GitHub](https://github.com/DSoudis/shiftshare). There is still work to be done if i ever want to submit it on CRAN, but it will serve me well for the next few projects.
+
+In this post i will first give a brief description of SSA and then use employment data for 51 U.S. states to demonstrate the usefulness of the technique. If you are wondering why the title of this post is "California Uber Alles", it will become apparent later in this post.
+
+## Shift Share Analysis
+
+SSA is a nifty little technique popular in Regional Science and Economics. The idea behind it is to decompose the growth of an economic variable (e.g., number of jobs or output value) within a region into underlying driving forces that act at different levels such as the national, regional, and industry level. Formally, these three components are calculated as: 
+
+$NS_i = e^i_t(G)$
+
+$IM_i = e^i_t(G_i - G)$
+
+$RS_i = e^i_t(g_i - G_i)$
+
+where $e^i_t$ stands for the value of the economic variable in the start of the period of interest in the reference region, $G$ is the national growth rate of the economic variable, and $G_i$, $g_i$ is the national and regional industry-specific change of the same variable, respectively. When added, the three components above equal the change of the economic variable within the given period
+
+$NS_i + IM_i + RS_i = \Delta e^i_{t, t+n}$
+
+In simple English the three components of SSA translate to:
+
+*National growth effect* = The portion of the change in the economic variable attributed to country (or state) level effects. It equals the theoretical change in the regional variable had it followed the national growth rate.
+
+*Industry mix effect * = The portion of the change in the economic variable attributed to the performance of a specific industry. It equals the change in the regional variable had it followed the national industry specific growth rate minus the national growth effect.
+
+*Local share effect* = This is often the focus of the analysis. It equals the change in the economic variable that cannot be attributed to the other two effects. If it is a positive number, then the region has a comparative advantage in a specific industry.
+
+There are several variants of SSA but the main intuition still holds. You can have a look at the relevant Wikipedia page for more information and then find your way through published research. 
+
+
+## Most Competitive US region in Data Science!
+Nothing explains an analytical method better than an example. Using my package i can compare the regional competitiveness of US region in Data Science. The package ships with a dataset containing information about regional employment in 51 US states broken down by 23 Occupational Categories between 2012 and 2015. The one that comes closer to Data Science is "Computer and Mathematical Occupations". This is certainly a much broader field than Data Science as it probably includes occupations such as web developers and process control statisticians but it will do for this post!
+
+You can download the package using
+
+```{r, eval = FALSE}
+devtools::install_github("DSoudis/shiftshare")
+```
+
+And upload the US regional data with
+```{r}
+library(shiftshare)
+data('usregions')
+str(usregions)
+```
+
+
+
+Once you load the data, you can use either `ssa` or `dssa` (dynamic shift share analysis) to get the desired decomposition. The functions require as input a dataframe, the name of the economic variable (*y.var*), the regional identifier (*region.var*), the sector or industry identifier (*sector.var*) and the year variable (*year.var*). In addition, it requires the value of the regional identifier that refers to the largest region (*gregion.id*) which is the US here, the value of the sector identifier that refers to the total employment per region (*sector.id*) and the end- and start-year for the analysis.
+
+
+```{r}
+my.ssa <- ssa(usregions, y.var = 'TOT_EMP' ,region.var = 'ST',
+              sector.var = 'OCC_TITLE', gregion.id = 'US',
+              year.var = 'Year', sector.id = 'All Occupations',
+              start.year = 2013, end.year = 2015)
+str(my.ssa)
+```
+
+This produced a dataframe that contains the three SSA components for each region and each sector for 51 US states between 2013 and 2015. To find out which state is the most competitive in Computer and Mathematical Occupations we can choose that sector and generate a simple barplot of the Local Share Effect ($RS_i$).
+
+```{r}
+library(ggplot2)
+library(dplyr)
+my.ssa2 <- my.ssa %>%
+        filter(OCC_TITLE == 'Computer and Mathematical Occupations') %>%
+        select(ST, RSi)
+
+my.ssa2 %>% ggplot(.,aes(x=ST, y=RSi))+geom_bar(stat = 'identity' ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Two states seem to have generated significantly more jobs in the Computer and Mathematical Occupations industry than the national or industry trends would have predicted. California and Texas. Virginia and the State of Washington on the other hand have done much worst in terms of employment growth in this industry.
+
+Another way to visualize these number is to produce a map of the U.S. colored by the size of the regional competitiveness size for each state.
+
+```{r}
+
+my.ssa2 <- usregions %>% group_by(ST) %>%
+        summarise( region = first(STATE)) %>%
+        right_join(my.ssa2)
+
+my.ssa2$region <- tolower(my.ssa2$region)
+
+us <- map_data("state")
+
+gg <- ggplot()
+gg <- gg + geom_map(data = us, map = us,
+                    aes(x = long, y = lat, map_id = region),
+                    fill = "#ffffff", color = "#ffffff", size = 0.15)
+gg <- gg + geom_map(data = my.ssa2, map = us,
+                    aes(fill = RSi, map_id = region),
+                    color = "#ffffff", size = 0.15)
+gg <- gg + labs(x = NULL, y = NULL)
+gg <- gg + coord_map("albers", lat0 = 39, lat1 = 45)
+gg <- gg + theme(panel.border = element_blank())
+gg <- gg + theme(panel.background = element_blank())
+gg <- gg + theme(axis.ticks = element_blank())
+gg <- gg + theme(axis.text = element_blank())
+gg
+
+```
+
+Again, California and Texas stand out as clear winners! I remember sometime ago i took a peek at the "Intro to Data Science" course offered by Udacity. At some point the  instructor said something along the lines of :"*Who is a data scientist? Some people say it's a data analyst that lives in California...*". I don't know if that is true, but CA has been doing quite well in the Computer and Mathematical Occupations industry!

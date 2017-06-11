@@ -1,0 +1,201 @@
+---
+title: 'Text Mining Responses to Publication Rejection'
+author: ''
+date: '2016-01-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Introduction
+
+*Publish or Perish* is a well known phrase describing the need to produce academic publications in order to secure a permanent position in an academic institution. Besides being a rewarding experience, publishing can be strenuous and often disappointing. About 90 to 95 per cent of papers submitted to (reasonably) good journals are rejected by the journals' editors.
+
+A good part of the decision to reject (or accept) a paper is based on reviews given by at least 2 referees; academics chosen by the journal's editor as external reviewers. Their decision is almost always final. Given the volume of submissions, journal editors will reject any paper that receives negative reviews.
+
+But how would the authors respond to these reviews if they had the change? Two blogs, *Economics Job Market Roumors* and *Political Science Market Roumors* recently started giving this opportunity to academics in their fields. Authors can upload information about a manuscript they submitted to a journal (e.g., name of the journal, year of submission, number of referee reports received), and, most importantly, their comments on the quality of the reviews received. 
+
+In this post, i will scrape the data from the blogs' web pages, compute a sentiment score for each comment, and try to explain this sentiment based on the provided information. As the reader will see later on, the most important determinant of comment sentiment is (surprise-surprise) whether the paper was accepted for publication. At the end of the post i will discuss some of the limitations of the dataset.
+
+
+# Getting the data
+
+Authors' comments are available online at <https://www.econjobrumors.com/journals.php> and <http://www.poliscirumors.com/journals.php>. They come in the form of a HTML table and R's package *rvest* provides a great way to scrape the data directly into R. The following code loads the HTML tables from the two blogs:
+
+```{r get reviews}
+library(rvest)
+library(dplyr)
+
+url <- "https://www.econjobrumors.com/journals.php"
+econ.table <- url %>%
+      read_html() %>%
+      html_nodes(xpath = '//*[@id="jTable"]') %>%
+      html_table()
+
+econ.journals <- as.data.frame(econ.table)
+
+url <- "http://www.poliscirumors.com/journals.php"
+pol.table <- url %>%
+  read_html() %>%
+  html_nodes(xpath = '//*[@id="joTable"]') %>%
+  html_table()
+
+pol.journals <- as.data.frame(pol.table)
+```
+
+After scraping the tables, i discard rows that have empty text fields or those that refer to papers with decisions still pending. I then change a factor variable to numeric and end by joining the two data frames and doing some clean-up. I also create a dummy variable denoting whether the submitting author is an economist or a political scientist.
+
+```{r}
+econ.journals$Avg.time.between.R.R <- as.numeric(econ.journals$Avg.time.between.R.R)
+econ.journals2 <- econ.journals %>%
+  filter( Notes != "" & Notes != " " & Result != 'Pending')
+
+pol.journals$Avg.time.between.R.R <- as.numeric(pol.journals$Avg.time.between.R.R)
+pol.journals2 <- pol.journals %>%
+  filter( Notes != "" & Notes != " " & Result != 'Pending')
+
+
+full <- rbind(econ.journals2,pol.journals2)
+names(full) <- c("Journal.Name", "Outcome", "First.Response.(Months)",
+  "Time.Between.Responses.(Months)", "Number.Referees", "Authors.Comments",
+  "Year.Submission", "Added.On-line" )
+full$Economist <- 0
+full$Economist[1:nrow(econ.journals2)] <- 1
+rm(econ.journals, econ.journals2, pol.journals, pol.journals2, url, econ.table, pol.table)
+```
+
+This produces a data frame containing 9 variables. Simply printing the structure of the data frame already reveals that some wrangling is needed before the data are usable. Some authors' comments look nonsensical (e.g., "ghj", "ewewewew" etc.). I will assume that this is not a side effect of the review process and discard them in the following step.
+
+```{r}
+str(full)
+```
+
+# Cleaning the data
+
+To clean the text contained in the *Author's Comments* attribute i will use two packages, namely *tm* and *qdap*. I first replace things like contractions and symbols in the original text, turn the text into a corpus, and pass it to a cleaner function to take care of things like trailing and leading whitespace, punctuation, etc. I will also drop nonsensical comments.
+
+```{r}
+library(qdap)
+library(tm)
+
+qdap_clean <- function(x) {
+      x <- replace_contraction(x)
+      x <- replace_number(x)
+      x <- replace_ordinal(x)
+      x <- replace_symbol(x)
+      x <- tolower(x)
+      return(x)
+}
+
+full$Authors.Comments <- qdap_clean(full$Authors.Comments)
+full <- full[-c(1,2,3,4,642,877,1986),]
+
+source <-  VectorSource(full$Authors.Comments)
+corpus <- VCorpus(source)
+
+tm_clean <- function(corpus){
+      corpus <- tm_map(corpus, removePunctuation)
+      corpus <- tm_map(corpus, stripWhitespace)
+      corpus <- tm_map(corpus, removeNumbers)
+      corpus <- tm_map(corpus, content_transformer(tolower))
+      corpus <- tm_map(corpus, removeWords,
+      c(stopwords("en"),"four" ,"paper", "one", "three" ,
+      "two", "six", "ten"))
+      return(corpus)
+}
+
+corpus <- tm_clean(corpus)
+```
+
+
+# Calculating Sentiment Polarity
+
+Now that the data are processed we can calculate the text polarity for each comment. In the simplest case, polarity is a measure of a text's connotation. It is based on an algorithm trained on customer reviews and results in a score that indicates whether a review is positive or negative. Here i use a continuous scale of polarity running from -1 (very negative review) to 1 (very positive review). More information about the calculation of polarity can be found in Hu and Liu (2004).
+
+In the following chunk of code i calculate polarity scores and plot their distribution by means of a histogram.
+
+```{r}
+library(ggplot2)
+polarity.corpus <- counts(polarity(strip(full$Authors.Comments), constrain = TRUE))[, "polarity"]
+
+full$Polarity <- polarity.corpus
+qplot(full$Polarity, geom = "histogram", main = "Histogram of Polarity",
+      xlab = "Polarity", binwidth = 0.1, fill = I("grey"), 
+      col = I("black"))
+```
+
+Looking at the distribution, polarity scores come pretty close to a normal distribution, but not quite. Lets look at a few comments and their scores. Lets find and print a fairly negative comment, a fairly positive comment, and one not-so-clear comment.
+
+```{r}
+# Negative Comment
+full$Authors.Comments[which(full$Polarity < -0.5)[2]]
+
+# Positive Comment
+full$Authors.Comments[which(full$Polarity > 0.7)[1]]
+
+# Ambiguous comments
+full$Authors.Comments[which(full$Polarity > -0.1 & full$Polarity < 0.1)[1]]
+```
+
+The algorithm seems to be doing a fairly good job! The first comment is certainly negative! The second comment is undoubtedly positive! The third comment conveys mixed feelings. This is a good reason to treat text polarity as a continuous variable and not as a 0/1 dummy. All in all, the sample seems to be fine for a first not-so-formal look at the determinants of author satisfaction with the review process.
+
+# What Explains Polarity Scores?
+## Journal Quality
+
+One could theorize about what determines sentiment scores wi(l)d(e)ly. Nevertheless, given that the current dataset only offers a limited number of variables to use as possible explanations, i will focus on two main determinants. The quality of the journal and the outcome of the submission (accept, referee rejection, desk rejection).
+
+Regarding journal quality. One would expect that top journals would draw their referees from a pool of very talented academics that could produce insightful reviews. Thus, there should be some variation between journals as to the average polarity scores. To test this i first choose all those journals that have at least 20 submissions in the dataset (in order to have more than a few observations per journal) and compare the average score using a simple ANOVA table.
+
+This choice produces a sample of 20 journals all of which fall in the category top/very good journals. This is quite unfortunate since it does not allow for a comparison between average and good journals. Nevertheless, we can still have a look at how these journals compare to each other. As we can see in the boxplot below, the average polarity score for almost all journals is a flat zero! The ANOVA table confirms that there doesn't seem to be a significant differences among them. Of course, this should be taken with the grain of salt given the small sample size and possible selection issues behind it. Nevertheless, it implies that the authors in the sample do not find the feedback from these good/top journals particularly helpful!
+
+```{r}
+small <- full %>%
+        group_by(Journal.Name) %>%
+        mutate(N = n()) %>%
+        filter(N >= 20)
+#boxplot(Polarity ~ Journal.Name, data = small, xaxt = "n")
+
+ggplot(small, aes(x = Journal.Name, y = Polarity)) + 
+        geom_boxplot() +
+        theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank())
+
+fit <- lm(Polarity ~ Journal.Name, data = small)
+anova(fit)
+```
+
+
+## Outcome of Submission
+The second major variable i would use to explain these scores is the outcome of the submission. In particular, i hypothesize that a rejection will lead to a negative response to the comments from the authors. In the table below i test this hypothesis using the full dataset.
+
+```{r}
+fit1 <- lm(Polarity ~ Outcome, data = full)
+fit2 <- lm(Polarity ~ Outcome + `First.Response.(Months)` +   `Time.Between.Responses.(Months)` + Number.Referees, data = full)
+
+stargazer::stargazer(fit1, fit2, type = 'text')
+```
+
+As the table above shows, on average, authors whose papers where rejected score lower on the sentiment score. Perhaps a bit surprisingly, desk rejections seem to be more "annoying" than referee rejections. In my opinion, i would rather get rejected within a week of submission rather than get rejected after 2, 3 or even 10 months. This result holds when i include other control variables such as the time it took for the first decision or the number of reports (but the sample size is greatly reduced). All in all, the outcome of the submission can explain about 22 per cent of the variation in the sentiment score.
+
+#Concllusions
+I used online data to find out how researchers in Economics and Political Science respond to referee comments from academic journals. The main conclusion from this short study is that  authors are not very satisfied with the comments they receive from very good/top journals, especially when their work is rejected. The average polarity score of the reviews is zero.
+
+This does not necessarily reflect the quality of the referee reviews though! It is frustrating to have your work judged and rejected. I believe the authors' comments do not really reflect their satisfaction with the referee reports, rather, they reflect their disappointment with the outcome of their submission. As the final table of the post shows, rejected authors write significantly more negative comments than those accepted.
+
+Finally, there are a number of issues with the data used and we should take the results above with a grain of salt. I would be surprised if the sample available is representative of the population of academic Economists and Political Scientists. I expect most contributors are young academics from Anglo-American institutions. It would make a much more interesting case study if the sample was more representative of the population and more attributes were available, such as author's age, gender, contract type (tenured vs. non-tenured). Perhaps one day the two *Job Rumours* blogs will collect this type of data. Until then, the results above will have to do. Happy publishing!
+
+# References
+
+Feinerer, I. and Hornik, K. (2017). tm: Text Mining Package. R package version 0.7-1. https://CRAN.R-project.org/package=tm
+  
+Hlavac, M. (2015). stargazer: Well-Formatted Regression and Summary Statistics Tables. R package version 5.2. http://CRAN.R-project.org/package=stargazer
+  
+Hu, M., and Liu, B. (2004). Mining opinion features in customer reviews. National Conference on Artificial Intelligence.
+
+Rinker, T. W. (2013). qdap: Quantitative Discourse Analysis Package. 2.2.5. University at Buffalo. Buffalo, New York. http://github.com/trinker/qdap
+
+Wickham, H. (2016). rvest: Easily Harvest (Scrape) Web Pages. R package version 0.3.2. https://CRAN.R-project.org/package=rvest
+
+Wickham, H. and Francois, R. (2016). dplyr: A Grammar of Data Manipulation. R package version 0.5.0. https://CRAN.R-project.org/package=dplyr

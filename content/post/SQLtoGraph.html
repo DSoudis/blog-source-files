@@ -1,0 +1,103 @@
+---
+title: From SQL to Plot in R
+author: ''
+date: '2017-05-16'
+output: html_document
+---
+
+
+
+<p>This is a very short post. I just wanted to take some time to appreciate the work done by the people behind <code>dplyr</code>. In particularly, how easy it is to connect to an SQL database, query your data, aggregate them, and end up with informative plots without having to switch between different technologies.</p>
+<div id="from-sql-to-plot" class="section level2">
+<h2>From SQL to Plot</h2>
+<p>For this post i will use a local SQLite dataset, namely the flights data set that records on-time data for all flights that departed from NYC in 2013.</p>
+<p>Say i wanted to plot the average delay per flight for each carrier. That would be as easy as:</p>
+<pre class="r"><code>library(dplyr)
+library(nycflights13)
+library(ggplot2)
+library(corrplot)
+
+flights_sqlite &lt;- tbl(nycflights13_sqlite(), &quot;flights&quot;)
+
+# Get total flights by carrier
+NFlights &lt;- flights_sqlite %&gt;% group_by(carrier) %&gt;%
+        summarise(Nflights = n())
+
+# Get Total Delay per Carrier
+TotalDelay &lt;- flights_sqlite %&gt;% group_by(carrier) %&gt;%
+        mutate(Delay = arr_delay + dep_delay) %&gt;%
+        summarise(TotalDelay = sum(Delay))
+
+# Calculate the Average Flight Delay and Graph it
+NFlights %&gt;% left_join(TotalDelay) %&gt;%
+        mutate(AverageDelay = TotalDelay / Nflights) %&gt;%
+        collect() %&gt;%
+        ggplot(.,aes(x = carrier, y = AverageDelay, fill = carrier)) +
+        geom_bar(stat = &#39;identity&#39;)</code></pre>
+<p><img src="/post/SQLtoGraph_files/figure-html/plot1-1.png" width="672" /></p>
+<p>Notice that while i connect to an SQLite database, i do not need to use SQL syntax since <code>dplyr</code> does the translation for me. One more thing that is important to know is that the intermediate results (i.e., NFlight and TotalDelay) where not pulled down from the database, rather, they were evaluated in a “lazy” manner. It was only when i used the verb “collect()” before the plot that the data where pulled down into my RAM.</p>
+<p>How does this magic work? <code>dplyr</code> combines intermediate queries and delays the evaluation of the code until the “final” query, where “final” means the one you collect on. So the three intermediate tables created below (NFlights, TotalDelay, and Final.Table) will run as one combined SQL query and the results will only pulled down when i explicitly ask for it (i.e., use the <code>collect()</code> function)</p>
+<pre class="r"><code>NFlights &lt;- flights_sqlite %&gt;% group_by(carrier) %&gt;%
+        summarise(Nflights = n())
+
+TotalDelay &lt;- flights_sqlite %&gt;% group_by(carrier) %&gt;%
+        mutate(Delay = arr_delay + dep_delay) %&gt;%
+        summarise(TotalDelay = sum(Delay))
+
+Final.Table &lt;- NFlights %&gt;% left_join(TotalDelay) %&gt;%
+        mutate(AverageDelay = TotalDelay / Nflights) </code></pre>
+<pre><code>## Joining, by = &quot;carrier&quot;</code></pre>
+<pre class="r"><code>show_query(Final.Table)</code></pre>
+<pre><code>## &lt;SQL&gt;
+## SELECT `carrier`, `Nflights`, `TotalDelay`, `TotalDelay` / `Nflights` AS `AverageDelay`
+## FROM (SELECT * FROM (SELECT `carrier`, COUNT() AS `Nflights`
+## FROM `flights`
+## GROUP BY `carrier`)
+## 
+## LEFT JOIN
+## 
+## (SELECT `carrier`, SUM(`Delay`) AS `TotalDelay`
+## FROM (SELECT `year`, `month`, `day`, `dep_time`, `sched_dep_time`, `dep_delay`, `arr_time`, `sched_arr_time`, `arr_delay`, `carrier`, `flight`, `tailnum`, `origin`, `dest`, `air_time`, `distance`, `hour`, `minute`, `time_hour`, `arr_delay` + `dep_delay` AS `Delay`
+## FROM `flights`)
+## GROUP BY `carrier`)
+## 
+## USING (`carrier`))</code></pre>
+<p>This could have done a bit more efficiently by selecting only the columns i am interested in</p>
+</div>
+<div id="combining-tables-and-plotinganalysing." class="section level2">
+<h2>Combining tables and ploting/analysing.</h2>
+<p>Now say i wanted to join the “flights” table with the “weather” table to see if weather conditions affect average delay times. There are many ways to do that but i like taking some intermediate steps. They are memory inexpensive (lazy evaluation) and are easier to inspect for errors, at least when compared to huge one-liners.</p>
+<pre class="r"><code>flights_sqlite &lt;- tbl(nycflights13_sqlite(), &quot;flights&quot;)
+weather_sqlite &lt;- tbl(nycflights13_sqlite(), &quot;weather&quot;)
+
+# Flights per month, day, and hour
+NFlights2 &lt;- flights_sqlite %&gt;% group_by(month, day, hour) %&gt;% 
+        summarise(Nflights = n())
+
+# Delay per month, day, and hour
+Delays &lt;- flights_sqlite %&gt;% group_by(month, day, hour) %&gt;% 
+        mutate(Delay = arr_delay + dep_delay) %&gt;%
+        summarise(TotalDelay = sum(Delay))
+# Average Delay per hour
+AverageDelay &lt;- NFlights2 %&gt;% left_join(Delays) %&gt;%
+        mutate(AverageDelay = TotalDelay / Nflights)
+
+# Join with weather data and plot correlations
+AverageDelay %&gt;% left_join(weather_sqlite) %&gt;% ungroup() %&gt;% 
+        select(AverageDelay, temp:visib) %&gt;% collect %&gt;%
+        cor(., use = &#39;complete.obs&#39;) %&gt;% corrplot</code></pre>
+<p><img src="/post/SQLtoGraph_files/figure-html/plot2-1.png" width="672" /></p>
+<pre class="r"><code># Scatterplot with Smooth excluding one outlier for the wind_speed variable
+AverageDelay %&gt;% left_join(weather_sqlite) %&gt;%
+        filter(wind_speed &lt; 1000) %&gt;% ungroup() %&gt;%
+        select(AverageDelay, wind_speed) %&gt;% collect %&gt;%
+        ggplot(.,aes(x = wind_speed, y = AverageDelay)) +
+        geom_point() + geom_smooth()</code></pre>
+<p><img src="/post/SQLtoGraph_files/figure-html/plot2-2.png" width="672" /></p>
+<p>So there seems to be little relationship between delay times and local weather. This does make some sense, but it’s not the point of the post. The point of the post is how easy <code>dplyr</code> makes the use of SQL databases for basic querying and analysis.</p>
+<p>It kind of makes it feel like this:</p>
+<div class="figure">
+<img src="/img/aG9Z0b5_700b.jpg" alt="Just another Day Plotting" />
+<p class="caption">Just another Day Plotting</p>
+</div>
+</div>

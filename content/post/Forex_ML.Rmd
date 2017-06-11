@@ -1,0 +1,174 @@
+---
+title: Machine Learning For Forex
+author: ' '
+date: '2017-01-10'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Introduction
+
+I have seen several posts using machine learning techniques as a tool for modeling foreign exchange prices. Most of the ones I've seen are trying to forecast future values (or changes) of a currency pair using past information.
+
+For a change, in this post i want to see whether i can predict a reasonable value for the *current* exchange price of the EUR/USD pair using information from all other major dollar currency pairs. The idea is to use the correlation among the major dollar-pairs to produce an estimate of the current "true level" of the EUR/USD exchange rate. Should the observed value be "far away" - by some statistical measure - from the estimated true value then one would expect a reversal to the correlation implied value.
+
+To do that i will use:
+
+* The `tidyquant` package to get daily values for the following pairs from 01-01-2000 until today:
+    + EUR/USD, GBP/USD, CAD/USD, CHF/USD, JPY/USD, AUD/USD.
+
+
+* the `caret` package to train the following learners:
+    + Partial Least Squares (PLS): As you will see below, the currencies are very highly correlated. PLS will help extract combinations of predictor pairs in a way that maximizes the dependent variable's explained variance 
+    + Support Vector Machines (SVM): SVMs do generally well in predicting outcomes. To handle the high correlation between my predictors i will apply a PCA and use the extracted components. Furthermore, i will use both a linear and radial base kernel.
+    + Multivariate Adaptive Regressions Splines (MARS): MARS is another well performing algorithm that can take care of non-linear relationship. I believe this feature makes it a good candidate for my experiment.
+    
+## Getting the Data
+
+To get the data one can use the `tidyquant` package. It is easy and intuitive and brings together a lot of financial analysis packages such as `TTR` and `PerformanceAnalytic`. Notice that after i get the data i merge them into one data frame and drop some missing values. Imputing them is not really an option since they are missing for all predictors.
+
+```{r get.data}
+library(tidyquant)
+library(dplyr)
+
+eur_usd <- tq_get("DEXUSEU", get = "economic.data",
+                  from = "2000-01-01")
+jpy_usd <- tq_get("DEXJPUS", get = "economic.data",
+                  from = "2000-01-01")
+gbp_usd <- tq_get("DEXUSUK", get = "economic.data",
+                  from = "2000-01-01")
+cad_usd <- tq_get("DEXCAUS", get = "economic.data",
+                  from = "2000-01-01")
+chf_usd <- tq_get("DEXSZUS", get = "economic.data",
+                  from = "2000-01-01")
+aud_usd <- tq_get("DEXUSAL", get = "economic.data",
+                  from = "2000-01-01")
+
+dflist <- list(eur_usd, gbp_usd, cad_usd,
+               chf_usd, jpy_usd, aud_usd)
+
+df <- plyr::join_all(dflist, by = 'date', type = 'left')
+
+df <- na.omit(df)
+
+names(df) <- c('date', 'EUR/USD', 'GBP/USD',
+               'CAD/USD', 'CHF/USD', 'JPY/USD',
+               'AUD/USD')
+```
+
+
+The final data frame looks like this:
+```{r see.str}
+str(df)
+```
+
+
+The correlations between the currencies are below. As expected, there is high correlation between the EUR/USD and all the other major pairs. Most of them also seem to be correlated to each other to some degree (except for the GBP/USD which seems to be a peculiar fruit...).
+
+```{r see.cor, cache = FALSE}
+library(corrplot)
+m <- cor(df[,-1])
+corrplot(m)
+
+```
+
+## Training the models
+
+When using time series it makes no sense to randomly sample points into the test and training sets. The models must learn to predict present or future values using past information only. So the proper way to split your sample is by creating time slices in a way that the models will be trained on past values and then predict current values. In my case, i chose the data to be split in 90-days intervals for training and then 30-days intervals for cross-validation. For the final test i kept a separate 30-days sample. Given the long time it takes to train the models i will runt the analysis in parallel using 3 out of the 4 logical processors in my laptop.
+
+```{r get.libs}
+library(caret)
+library(lattice)
+library(doParallel)
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+set.seed(1234)
+
+train <- df[1:(nrow(df) - 30),]
+test <- df[-(1:(nrow(df) - 30)),]
+ctrl <- trainControl(method = "timeslice",
+                              initialWindow = 90,
+                              horizon = 30,
+                              fixedWindow = TRUE)
+```
+
+
+Finally, i train the three training models and compare their performance using the RMSE statistic
+
+```{r fit}
+plsFit <- train(`EUR/USD` ~ .,
+                data = train[,-1],
+                method = "pls",
+                tuneLength = 5,
+                trControl = ctrl,
+                preProc = c("center", "scale"))
+
+
+svmFit <- train(`EUR/USD` ~ .,
+                data = train[,-1],
+                method = "svmLinear",
+                tuneLength = 10,
+                trControl = ctrl,
+                preProc = c("center", "scale", "pca"))
+
+svmFit2 <- train(`EUR/USD` ~ .,
+                data = train[,-1],
+                method = "svmRadial",
+                tuneLength = 10,
+                trControl = ctrl,
+                preProc = c("center", "scale", "pca"))
+
+earthFit <- train(`EUR/USD` ~ .,
+                   data = train[,-1],
+                   method = "earth",
+                   tuneLength = 5,
+                   trControl = ctrl,
+                   preProc = c("center", "scale", "pca"))
+```
+
+## Comparing the Models
+
+So which model did best? Lets look at RMSE per model.
+
+```{r resamps}
+resamps <- resamples(list(SVM_L = svmFit,
+                          SVM_RB = svmFit2,
+                          PLS = plsFit,
+                          MARS = earthFit))
+
+ss <- summary(resamps)
+
+
+
+trellis.par.set(caretTheme())
+dotplot(resamps, metric = "RMSE")
+```
+
+The model with the lower RMSE is Partial Least Squares. As you can see below though, the performance is not that encouraging. The fit provides a very low R-square of about 0.19 when predicting the final unseen test set. The mediocre performance is confirmed by plotting the observed exchange rate against the predicted one.
+
+
+```{r preds}
+pred <- predict.train(plsFit, newdata = test[,-1])
+postResample(pred, test$`EUR/USD`)
+
+test$Pred <- pred
+
+ggplot(test, aes(x = date, y = `EUR/USD`, color = "Actual")) +
+        geom_line() +
+        geom_line(aes( x = date, y = pred, color = "Predicted"),
+        linetype = 2)
+
+```
+
+Looking at the graph a bit better, it seems that the prediction was able to catch the short-term twists and turns of the EUR/USD price, but missed the major trend it experienced during the testing interval.
+
+I wonder whether this could be improved by incorporating a lagged value of the EUR/USD. The reasoning behind this would be that the lagged value would drive the prediction's current value, much like an equilibrium condition, while the other variables would provide information on how the current price deviates around that equilibrium. So while not a directly usable result at this point, it offers some food for thought.
+
+## Conclusions
+
+In this post i tried to experiment with Forex prediction. Instead of trying to forecast values given some past data, i wanted to see if current exchange rates of the EUR/USD pair could be predicted by the current values of the other major USD pairs. The idea being that if the observed exchange rate wondered too far from the predicted value one would expect that there would be a move towards the predicted value.
+
+It turns out that things are not that simple! what i want to try next is i) include a lagged value of the EUR/USD and ii) try larger training intervals. I will post when i get time to try out these ideas.
