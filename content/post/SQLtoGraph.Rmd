@@ -62,7 +62,6 @@ show_query(Final.Table)
 
 ```
 
-This could have done a bit more efficiently by selecting only the columns i am interested in
 
 ## Combining tables and ploting/analysing.
 
