@@ -1,9 +1,9 @@
-baseurl = "/"
+baseurl = "http://dsoudis.netlify.com/"
 relativeurls = true
 languageCode = "en-us"
 title = "R-ventures in Data Science"
 theme = "hugo-lithium-theme"
-googleAnalytics = ""
+googleAnalytics = "UA-100938681-1"
 disqusShortname = ""
 ignoreFiles = ["\\.Rmd$", "_files$", "_cache$"]
 
