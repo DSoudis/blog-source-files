@@ -1,4 +1,4 @@
-baseurl = "http://dsoudis.netlify.com/"
+baseurl = "http://dsoudis.netlify.com"
 relativeurls = true
 languageCode = "en-us"
 title = "R-ventures in Data Science"
@@ -7,7 +7,9 @@ googleAnalytics = "UA-100938681-1"
 disqusShortname = ""
 ignoreFiles = ["\\.Rmd$", "_files$", "_cache$"]
 
-
+[[menu.main]]
+    name = "Home"
+    url = "http://dsoudis.netlify.com"
 [[menu.main]]
     name = "About"
     url = "/about/"
