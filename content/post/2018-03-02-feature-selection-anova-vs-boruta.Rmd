@@ -21,9 +21,10 @@ In what follows i will report on the performance of two selection methods over 3
 
 **Key Take-Aways **
 
-*
-*
-*
+* Feature Selection seems to be a sensible first step in classification problems (assuming your data are all tidy and ready to be modeled). There are few cases in all examples tried here that feature selection led to a worst performance and it almost always leads to decreased training times and less complex models
+* When the number of samples is small, especially with regard to the number of features, ANOVA will most likely outperform Boruta. 
+* If the number of samples is high enough Boruta performs very well at selecting variables that are relevant to the classification problem.
+* The usual caveat applies, i.e., there is no free lunch!
 
 ## Set Up
 

@@ -1,0 +1,12 @@
+base
+methods
+datasets
+utils
+grDevices
+graphics
+stats
+pander
+knitr
+readr
+dplyr
+bindrcpp
