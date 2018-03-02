@@ -21,9 +21,9 @@ In what follows i will report on the performance of two selection methods over 3
 
 **Key Take-Aways **
 
-* Feature Selection seems to be a sensible first step in classification problems (assuming your data are all tidy and ready to be modeled). There are few cases in all examples tried here that feature selection led to a worst performance and it almost always leads to decreased training times and less complex models
+* Feature Selection seems to be a sensible first step in classification problems (assuming your data are all tidy and ready to be modeled). There are few cases in all examples tried here that feature selection led to a worst performance and it almost always leads to decreased training times and less complex models.
 * When the number of samples is small, especially with regard to the number of features, ANOVA will most likely outperform Boruta. 
-* If the number of samples is high enough Boruta performs very well at selecting variables that are relevant to the classification problem.
+* If the number of samples is high enough Boruta performs very well at selecting variables that are relevant to the classification problem. Some attention is needed though if many dummy variables are present (see below for more details).
 * The usual caveat applies, i.e., there is no free lunch!
 
 ## Set Up
@@ -36,7 +36,7 @@ I also use IBM's HR dataset posted on Kaggle as a 'real-world' dataset. Again, I
 ### Algorithms
 I will be training 6 different algorithms. Namely, Random Forests, KNearest Neighbors, Linear and Radial Base Function SVMs, Logistic Regression, and Gradient Boosted Trees (henceforth GBT). Random Forests and GBT are the most often used algorithms in machine learning competitions exhibiting high performance. The other algorithms have been long standing choices that can provide a different "take" (e.g., linear vs non-linear estimation) on the classification problem and it would be interesting to see how they are all affected by the feature selection method.
 
-All algorithms are automatically tuned using Bayesian Optimization using 10-fold stratified cross validation repeated 3 times, but the number of iterations is kept relatively low (40). The choice of Bayesian Optimization is taken here to save some time on specifying hyperparameter values for each algorithm and training time. It is generally shown that this type of optimization performs as good as random search but takes much less time to converge. Since the purpose of this excessive is not to pick the best algorithm, but to investigate how each algorithm's performance is affected by the feature selection methods, tuning is kept to a minimum.
+All algorithms are automatically tuned using Bayesian Optimization using 10-fold stratified cross validation repeated 3 times, but the number of iterations is kept relatively low (40). The choice of Bayesian Optimization is taken here to save some time on specifying hyperparameter values for each algorithm and training time. It is generally shown that this type of optimization performs as good as random search but takes much less time to converge. Since the purpose of this exercise is not to pick the best algorithm, but to investigate how each algorithm's performance is affected by the feature selection methods, tuning is kept to a minimum.
 
 ### Feature Selection Methods
 
@@ -51,18 +51,19 @@ Although not reported here, i also used Mutual Information and its performance w
 ## Results
 
 ### Subset Selection
-Table 1 depicts the selection outcome for all methods and datasets. Two things stand out.
-
-First, as the number of samples increases, both ANOVA and Boruta perform better at picking up relevant variables. In addition, once the samples-to-features ratio passes 15:1 Boruta picks up all the relevant features (there are 30 informative and 70 noise variables). This is a behavior that I noticed on all simulated datasets i experimented with. As always, there is no free lunch here, but Boruta seems to be doing a great job at selecting an all-relevant subset of features.
-
-Second, looking at the IBM dataset, boruta selects just 2 features out of the 49 while ANOVA picks up a much larger number of features, namely 29. Since we don't know for sure which variables are relevant, it is hard to tell how successful each selection method is for this dataset.
-
+Table 1 depicts the selection outcome for all methods and datasets. 
 ```{r, echo=FALSE}
 library(pander)
 x <- data.frame(Method = c("ANOVA", "ANOVA", "ANOVA", "ANOVA", "Boruta", "Boruta", "Boruta", "Boruta"), Datasets = c("500 samples", "1500 samples", "3000 samples", "IBM"), Features_Chosen = c(14, 25, 25, 29, 23, 30, 30, 2), Of_Which_Relevant = c(14, 24, 24, "?", 23, 30, 30, "?"))
 pander(x, caption = "Table 1: Feature Selection")
 
 ```
+
+Two things stand out.
+
+First, as the number of samples increases, both ANOVA and Boruta perform better at picking up relevant variables. In addition, once the samples-to-features ratio passes 15:1 Boruta picks up all the relevant features (there are 30 informative and 70 noise variables). This is a behavior that I noticed on all simulated datasets i experimented with. As always, there is no free lunch here, but Boruta seems to be doing a great job at selecting an all-relevant subset of features.
+
+Second, looking at the IBM dataset, boruta selects just 2 features out of the 49 while ANOVA picks up a much larger number of features, namely 29. Since we don't know for sure which variables are relevant, it is hard to tell how successful each selection method is for this dataset. This exposes a potential limitation of the method. The IBM dataset contains a good number of dummy variables. Since all tree based algorithms are biased towards continuous variables (easier to find a splitting point!) we might be unable to identify dummy variables as important unless the dummies separate the labels quite well!
 
 ### Classification Performance
 

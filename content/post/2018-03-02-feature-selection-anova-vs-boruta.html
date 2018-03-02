@@ -14,9 +14,9 @@ tags: []
 <p>In what follows i will report on the performance of two selection methods over 3 artificial and 1 ‘real-world’ datasets<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a>. In particular, i will report the results from training 6 algorithms on i) the full dataset, ii) a reduced set of the features based on univariate feature selection by means of ANOVA, and iii) a second reduced feature set chosen using the Boruta algorithm. If you are not familiar with the Boruta algorithm you can find a formal description in Kursa et al (2010a).</p>
 <p><strong>Key Take-Aways </strong></p>
 <ul>
-<li>Feature Selection seems to be a sensible first step in classification problems (assuming your data are all tidy and ready to be modeled). There are few cases in all examples tried here that feature selection led to a worst performance and it almost always leads to decreased training times and less complex models</li>
+<li>Feature Selection seems to be a sensible first step in classification problems (assuming your data are all tidy and ready to be modeled). There are few cases in all examples tried here that feature selection led to a worst performance and it almost always leads to decreased training times and less complex models.</li>
 <li>When the number of samples is small, especially with regard to the number of features, ANOVA will most likely outperform Boruta.</li>
-<li>If the number of samples is high enough Boruta performs very well at selecting variables that are relevant to the classification problem.</li>
+<li>If the number of samples is high enough Boruta performs very well at selecting variables that are relevant to the classification problem. Some attention is needed though if many dummy variables are present (see below for more details).</li>
 <li>The usual caveat applies, i.e., there is no free lunch!</li>
 </ul>
 <div id="set-up" class="section level2">
@@ -29,7 +29,7 @@ tags: []
 <div id="algorithms" class="section level3">
 <h3>Algorithms</h3>
 <p>I will be training 6 different algorithms. Namely, Random Forests, KNearest Neighbors, Linear and Radial Base Function SVMs, Logistic Regression, and Gradient Boosted Trees (henceforth GBT). Random Forests and GBT are the most often used algorithms in machine learning competitions exhibiting high performance. The other algorithms have been long standing choices that can provide a different “take” (e.g., linear vs non-linear estimation) on the classification problem and it would be interesting to see how they are all affected by the feature selection method.</p>
-<p>All algorithms are automatically tuned using Bayesian Optimization using 10-fold stratified cross validation repeated 3 times, but the number of iterations is kept relatively low (40). The choice of Bayesian Optimization is taken here to save some time on specifying hyperparameter values for each algorithm and training time. It is generally shown that this type of optimization performs as good as random search but takes much less time to converge. Since the purpose of this excessive is not to pick the best algorithm, but to investigate how each algorithm’s performance is affected by the feature selection methods, tuning is kept to a minimum.</p>
+<p>All algorithms are automatically tuned using Bayesian Optimization using 10-fold stratified cross validation repeated 3 times, but the number of iterations is kept relatively low (40). The choice of Bayesian Optimization is taken here to save some time on specifying hyperparameter values for each algorithm and training time. It is generally shown that this type of optimization performs as good as random search but takes much less time to converge. Since the purpose of this exercise is not to pick the best algorithm, but to investigate how each algorithm’s performance is affected by the feature selection methods, tuning is kept to a minimum.</p>
 </div>
 <div id="feature-selection-methods" class="section level3">
 <h3>Feature Selection Methods</h3>
@@ -45,9 +45,7 @@ tags: []
 <h2>Results</h2>
 <div id="subset-selection" class="section level3">
 <h3>Subset Selection</h3>
-<p>Table 1 depicts the selection outcome for all methods and datasets. Two things stand out.</p>
-<p>First, as the number of samples increases, both ANOVA and Boruta perform better at picking up relevant variables. In addition, once the samples-to-features ratio passes 15:1 Boruta picks up all the relevant features (there are 30 informative and 70 noise variables). This is a behavior that I noticed on all simulated datasets i experimented with. As always, there is no free lunch here, but Boruta seems to be doing a great job at selecting an all-relevant subset of features.</p>
-<p>Second, looking at the IBM dataset, boruta selects just 2 features out of the 49 while ANOVA picks up a much larger number of features, namely 29. Since we don’t know for sure which variables are relevant, it is hard to tell how successful each selection method is for this dataset.</p>
+<p>Table 1 depicts the selection outcome for all methods and datasets.</p>
 <table style="width:85%;">
 <caption>Table 1: Feature Selection</caption>
 <colgroup>
@@ -115,6 +113,9 @@ tags: []
 </tr>
 </tbody>
 </table>
+<p>Two things stand out.</p>
+<p>First, as the number of samples increases, both ANOVA and Boruta perform better at picking up relevant variables. In addition, once the samples-to-features ratio passes 15:1 Boruta picks up all the relevant features (there are 30 informative and 70 noise variables). This is a behavior that I noticed on all simulated datasets i experimented with. As always, there is no free lunch here, but Boruta seems to be doing a great job at selecting an all-relevant subset of features.</p>
+<p>Second, looking at the IBM dataset, boruta selects just 2 features out of the 49 while ANOVA picks up a much larger number of features, namely 29. Since we don’t know for sure which variables are relevant, it is hard to tell how successful each selection method is for this dataset. This exposes a potential limitation of the method. The IBM dataset contains a good number of dummy variables. Since all tree based algorithms are biased towards continuous variables (easier to find a splitting point!) we might be unable to identify dummy variables as important unless the dummies separate the labels quite well!</p>
 </div>
 <div id="classification-performance" class="section level3">
 <h3>Classification Performance</h3>
