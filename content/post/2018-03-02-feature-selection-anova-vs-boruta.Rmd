@@ -1,0 +1,121 @@
+---
+title: 'Feature Selection: ANOVA vs Boruta'
+author: ''
+date: '2018-03-02'
+slug: feature-selection-anova-vs-boruta
+categories: []
+tags: []
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Machine learning practitioners must make various decisions during a typical application. Which algorithms will be used? Should all variables be used for the classification problem? Will hyperparameter tuning be performed using random or grid search, and which parameter values should be provided to search over?
+
+In this post i will focus on the use of feature selection methods to reduce the feature space to a more manageable subset. There are several advantages in using a reduced set of (ideally) relevant-only features. Shorter training times, reduced chance of overfitting, and even higher accuracy can be attained when using a smartly reduced dataset. Nevertheless, like many things in data science, feature selection is not guaranteed to work every time.
+
+In what follows i will report on the performance of two selection methods over 3 artificial and 1 'real-world' datasets^[More datasets where actually used with varying degrees of dimentionality and/or overall difficulty, but the results reported here are representative]. In particular, i will report the results from training 6 algorithms on i) the full dataset, ii) a reduced set of the features based on univariate feature selection by means of ANOVA, and iii) a second reduced feature set chosen using the Boruta algorithm. If you are not familiar with the Boruta algorithm you can find a formal description in Kursa et al (2010a).
+
+**Key Take-Aways **
+
+*
+*
+*
+
+## Set Up
+
+### Data
+I simulate 3 different datasets using scikit-learn's make_classification. They all use the same number of total features (100) of which 10 are informative (i.e. related to the classification labels) 20 are redundant (i.e. correlated to informative features but not used in the label generating process) and the remaining 70 features are pure noise. There are 2 classes to predict and 3 clusters per class. The datasets differ in their samples-to-features ratio. The first dataset has a 5:1 ratio (500 samples and 100 Features), the second 15:1 and the third 30:1.This is only one of the set-ups used. I have played around with the parameters to include many more features and clusters, but the results remain pretty similar.
+
+I also use IBM's HR dataset posted on Kaggle as a 'real-world' dataset. Again, I've applied the methodology used here to other non-simulated datasets and the results presented here are a good summary of the more general findings. What makes the IBM dataset interesting is that the Boruta algorithm selects just 2 out of the 49 features as informative, and yet, the performance of the models trained on those 2 features often matches that of the models trained on the full feature set or the much broader subset selected by ANOVA. Furthermore, this dataset is quite unbalanced and this makes it an even more interesting case to try feature selection on.
+
+### Algorithms
+I will be training 6 different algorithms. Namely, Random Forests, KNearest Neighbors, Linear and Radial Base Function SVMs, Logistic Regression, and Gradient Boosted Trees (henceforth GBT). Random Forests and GBT are the most often used algorithms in machine learning competitions exhibiting high performance. The other algorithms have been long standing choices that can provide a different "take" (e.g., linear vs non-linear estimation) on the classification problem and it would be interesting to see how they are all affected by the feature selection method.
+
+All algorithms are automatically tuned using Bayesian Optimization using 10-fold stratified cross validation repeated 3 times, but the number of iterations is kept relatively low (40). The choice of Bayesian Optimization is taken here to save some time on specifying hyperparameter values for each algorithm and training time. It is generally shown that this type of optimization performs as good as random search but takes much less time to converge. Since the purpose of this excessive is not to pick the best algorithm, but to investigate how each algorithm's performance is affected by the feature selection methods, tuning is kept to a minimum.
+
+### Feature Selection Methods
+
+As discussed above, i use two selection methods:
+
+* A classic ANOVA that tests whether there is a (linear) relationship between the classification labels and each independent variable.
+
+* The Boruta algorithm that uses Random Forests' variable importance to test whether a feature has an explanatory power higher than pure noise.
+
+Although not reported here, i also used Mutual Information and its performance was consistently disappointing even when compared to the -often frowned upon- ANOVA.
+
+## Results
+
+### Subset Selection
+Table 1 depicts the selection outcome for all methods and datasets. Two things stand out.
+
+First, as the number of samples increases, both ANOVA and Boruta perform better at picking up relevant variables. In addition, once the samples-to-features ratio passes 15:1 Boruta picks up all the relevant features (there are 30 informative and 70 noise variables). This is a behavior that I noticed on all simulated datasets i experimented with. As always, there is no free lunch here, but Boruta seems to be doing a great job at selecting an all-relevant subset of features.
+
+Second, looking at the IBM dataset, boruta selects just 2 features out of the 49 while ANOVA picks up a much larger number of features, namely 29. Since we don't know for sure which variables are relevant, it is hard to tell how successful each selection method is for this dataset.
+
+```{r, echo=FALSE}
+library(pander)
+x <- data.frame(Method = c("ANOVA", "ANOVA", "ANOVA", "ANOVA", "Boruta", "Boruta", "Boruta", "Boruta"), Datasets = c("500 samples", "1500 samples", "3000 samples", "IBM"), Features_Chosen = c(14, 25, 25, 29, 23, 30, 30, 2), Of_Which_Relevant = c(14, 24, 24, "?", 23, 30, 30, "?"))
+pander(x, caption = "Table 1: Feature Selection")
+
+```
+
+### Classification Performance
+
+The two techniques seem to successfully reduce the feature set, but how does the selected subset perform once it's used for classification?
+
+My aim here is not to find the best performing combination of algorithms and datasets, rather, i want to see how various algorithms' performance is affected by the use of a reduced subset of features. For sure, working with a smaller subset will reduce training time, but will it affect classification performance negatively?
+
+Table 2 presents the test accuracy for 6 algorithms trained on all versions of the different datasets (i.e., Full, ANOVA, Boruta). For economy of space, i do not present the cross-validation accuracies but they were much like the test accuracies reported here so there is not much evidence of overfitting.
+
+The table is structured as follows: Each algorithm takes up 3 rows. The columns display the accuracy of the given algorithm and subset over each dataset. The highlighted values denote the best performing subset per dataset. For example, the cell at row 2 column 2 is highlighted because, for the dataset with 500 samples, the ANOVA subset performed best when Gradient Boosted Trees where used. Cell at row 3 and column 3 is highlighted because, for the 1500 samples dataset, the Boruta subset performed best when Boosted Trees were used etc.
+
+
+```{r, echo=FALSE, cache=TRUE, message=FALSE, warning=FALSE}
+library(knitr)
+library(readr)
+library(dplyr)
+library(pander)
+emphasize.strong.cells(matrix(c(2,2, 2,5, 3,3,3,4,4,2, 5,3,5,5,6,4,7,3,7,4,8,2,8,4,8,5,9,2,10,3,10,4,11,5,12,2,14,5,15,2,15,3,15,4,16,5,17,2,17,4,18,3), nrow=26, ncol = 2, byrow=TRUE))
+panderOptions('keep.line.breaks', TRUE)
+#panderOptions('table.style', 'rmarkdown')
+results_500 <- read_csv("/home/soudis/Downloads/results_500.csv")
+results_1500 <- read_csv("/home/soudis/Downloads/results_1500.csv")
+results_3000 <- read_csv("/home/soudis/Downloads/results_3000.csv")
+results_IBM <- read_csv("/home/soudis/Downloads/results_HR.csv")
+merged <- results_500 %>% left_join(results_1500, by = 'Algo and Dataset') %>% left_join(results_3000, by = 'Algo and Dataset') %>% left_join(results_IBM, by = 'Algo and Dataset') %>% filter(!is.na(`Algo and Dataset`))
+merged$`Algo and Dataset` <- c("GBC_Full", "GBC_ANOVA", "GBC_Boruta", "KNN_Full", "KNN_ANOVA", "KNN_Boruta", "LSVC_Full", "LSVC_ANOVA", "LSVC_Boruta", "Logit_Full", "Logit_ANOVA", "Logit_Boruta", "RF_Full","RF_ANOVA",  "RF_Boruta", "SVC_Full", "SVC_ANOVA", "SVC_Boruta")
+small <-merged %>% select(`Algo and Dataset`, `Test Acc. (500 samples)`,`Test Acc. (1500 samples)`, `Test Acc. (3000 samples)`, `Test Acc. IBM`)
+colnames(small) <- c("Algo and\\\nData", "Test Acc.\\\n(500 samples)", "Test Acc.\\\n(1500 samples)", "Test Acc.\\\n(3000 samples)", "Test Acc.\\\nIBM")
+pander(small, caption = "Table 2: Classification Performance")
+# kable(merged %>% select(`Algo and Dataset`: `CV Acc. SD (500 samples)`, `Test Acc. (1500 samples)`: `CV Acc. SD (1500 samples)`, `Test Acc. (3000 samples)` : `CV Acc. SD (3000 samples)`) %>% filter(!is.na(`Algo and Dataset`)))
+```
+
+There are several patterns that stand out.
+
+* For the simulated datasets:
+      + The full sample seldomly performs better than the two subsets. Out of the 54 combinations, the full sample produces strictly better results only 4 times. In 2 of these cases, the linear models of the bunch are involved (Linear SVC and Logit). This makes some sense. Linear models could benefit by a higher dimentionality when searching for a good separating hyperplane. Non-linear models, like a radial base SVC can project lower dimension data into higher dimensions and hence arrive at better results using less features. In the 2 cases where the full model was preferred by a non-linear algorithm, the resulting performance was not significantly greater, and as such the benefit of a lower training times could lead us to use the more parsimonious subsets.
+      + Comparing ANOVA to Boruta, the results are algorithm and sample-size specific. For example, the tree based methods used here (Random Forests and GBT) performed better when the Boruta subset was used especially once the sample size increased. Boruta is actually based on Random Forests' variable importance metric so that is not much of a surprise! The SVMs used, one the other hand, sometimes benefited from both approaches and it is difficult to draw conclusions from these results. In the examples not presented here, a common pattern was that when samples where low, SVMs definitely benefited from ANOVA filtering. In general, as the size of samples increased, Boruta seemed to outperform ANOVA, but as always, no free lunch here!
+* For the IBM dataset:
+     + ANOVA is a clear winner for this dataset. It helps 5 out of the 6 algorithms achieve a better performance. This result supports what i mentioned earlier. When sample size is small, ANOVA filtering achieves better results while as the sample increases Boruta efficiently sniffs out all relevant features.
+     + Finally, it is worth remembering that Boruta only selected 2 features from this dataset. This could be due to a combination of high class imbalance and relatively low samples size (about 1150 observations). In other non-simulated datasets Boruta did a much better job.
+
+
+## Discussion and Conclusions
+
+Often times, when faced with a classification problem i wonder where to start first. Obviously understanding the data, cleaning them, and constructing new features is a necessary first step in all application. But where to after that?
+
+After quite some experimentation, it seems that selecting a subset of the features is a good first step. If the number of samples is high enough i believe Boruta is a good tool to select all relevant variables. If the number of samples is quite low though, especially with regard to the feature size, then good all ANOVA seems to be doing a better job. This agrees with previous research like Haury et. al. (2011) and Kursa et al (2010b).
+
+Starting with reduced set of features will significantly lower training time, decrease model complexity, and if performance is acceptable .. then problem solved! I guess this is as close to a free lunch as you can get in data science!
+
+## References
+
+Haury, A. C., Gestraud, P., & Vert, J. P. (2011). The influence of feature selection methods on accuracy, stability and interpretability of molecular signatures. PloS one, 6(12), e28210.
+
+Kursa, M. B., & Rudnicki, W. R. (2010a). Feature selection with the Boruta package. J Stat Softw, 36(11), 1-13.
+
+Kursa, M. B., Jankowski, A., & Rudnicki, W. R. (2010b). Boruta–a system for feature selection. Fundamenta Informaticae, 101(4), 271-285.
