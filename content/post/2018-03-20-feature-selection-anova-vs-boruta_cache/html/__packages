@@ -1,0 +1,6 @@
+base
+pander
+knitr
+readr
+dplyr
+bindrcpp
